@@ -5,7 +5,7 @@ from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 
 # --- KONFIGURASI ai ---
-client = Groq(api_key="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")
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
