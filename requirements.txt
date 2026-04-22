@@ -1,3 +1,4 @@
 streamlit
 groq
 mysql-connector-python
+streamlit-mic-recorder
