@@ -159,6 +159,23 @@ elif menu == "📅 Kontrol & Obat":
                     st.success(f"Berhasil menyimpan: {nama}! Semangat sehat ya Bunda! ✨")
             else:
                 st.warning("Mohon isi nama obat atau kegiatannya dulu ya, Bun.")
+        
+        # Tambahkan ini di bawah blok "if submit" Menu 2
+        st.divider()
+        st.subheader("📋 Daftar Jadwal Bunda")
+
+        conn = get_db_connection()
+        if conn:
+            # Ambil data terbaru
+            query = "SELECT tipe_kegiatan, nama_kegiatan, jadwal_waktu FROM jadwal_kontrol_obat ORDER BY jadwal_waktu ASC"
+            df = pd.read_sql(query, conn)
+            
+            if not df.empty:
+                # Menampilkan tabel yang cantik
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("Belum ada jadwal yang tersimpan.")
+            conn.close()
 
 # --- MENU 3: CEK NUTRISI ---
 elif menu == "🥗 Cek Nutrisi":
