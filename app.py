@@ -152,7 +152,7 @@ else:
         st.caption("Kelola jadwal obat dan janji temu dokter dalam satu tempat yang tenang.")
         st.divider()
 
-        col_input, col_info = st.columns()
+        col_input, col_info = st.columns([2, 1])
 
         with col_input:
             # FORM OBAT
@@ -214,7 +214,7 @@ else:
     # --- MENU 3: NUTRISI ---
     elif menu == "🥗 Cek Nutrisi":
         st.markdown('<div class="notion-header"><i class="lucide-apple"></i> Nutrisi Bunda</div>', unsafe_allow_html=True)
-        c_in, c_help = st.columns()
+        c_in, c_help = st.columns([2, 1])
         with c_in:
             makanan = st.text_input("Input makanan:")
             if st.button("Cek AI"):
