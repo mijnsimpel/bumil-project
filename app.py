@@ -202,7 +202,7 @@ st.caption("Kelola jadwal obat dan janji temu dokter dalam satu tempat yang tena
 st.divider()
 
 # Layout Kolom: Kiri untuk Input, Kanan untuk Informasi/Tips
-col_input, col_info = st.columns() 
+col_input, col_info = st.columns([2, 1]) 
 
 with col_input:
     # --- FORM OBAT ---
