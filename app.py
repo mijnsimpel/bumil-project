@@ -5,32 +5,41 @@ import io
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 
-# --- KONFIGURASI ai ---
-if "GROQ_API_KEY" in st.secrets:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-else:
-    st.error("GROQ_API_KEY tidak ditemukan di secrets. Harap konfigurasi di Streamlit Cloud.")
+
+# 1. VALIDASI KESELURUHAN (Cek semua kunci di awal agar aman)
+required_secrets = ["GROQ_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD"]
+missing_keys = [key for key in required_secrets if key not in st.secrets]
+
+if missing_keys:
+    st.error(f"Konfigurasi belum lengkap! Key berikut hilang di Secrets: {', '.join(missing_keys)}")
     st.stop()
 
-# Fungsi untuk koneksi ke TiDB menggunakan Secrets
-def get_connection():
-    return mysql.connector.connect(
-        host=st.secrets["DB_HOST"],
-        port=st.secrets["DB_PORT"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"],
-        database=st.secrets["DB_NAME"],
-        ssl_verify_cert=True # TiDB memerlukan koneksi aman (SSL)
-    )
+# 2. INISIALISASI AI
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-try:
-    conn = get_connection()
-    cursor = conn.cursor()
-    st.success("Berhasil terhubung ke Buku Catatan Bunda di Awan! ☁️✅")
-except Exception as e:
-    st.error(f"Waduh, belum bisa lapor ke database: {e}")
+# 3. FUNGSI KONEKSI DATABASE (Lebih aman & fleksibel)
+def get_db_connection():
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["DB_HOST"],
+            port=st.secrets.get("DB_PORT", 4000),
+            user=st.secrets["DB_USER"],
+            password=st.secrets["DB_PASSWORD"],
+            database=st.secrets.get("DB_NAME", "test"),
+            ssl_disabled=False
+        )
+        return conn
+    except Exception as e:
+        st.error(f"Gagal menyambungkan ke TiDB Cloud: {e}")
+        return None
 
-    
+# 4. CEK KONEKSI AWAL
+db_conn = get_db_connection()
+if db_conn and db_conn.is_connected():
+    st.success("Sistem AI & Database Cloud siap digunakan! 🚀☁️")
+    db_conn.close()
+
+
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
 
@@ -43,16 +52,6 @@ st.markdown("""
     div[data-testid="stExpander"] { border: none; box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
-
-# --- 2. FUNGSI KONEKSI DATABASE ---
-def get_connection():
-    return mysql.connector.connect(
-        host=st.secrets.get("DB_HOST", "127.0.0.1"),
-        user="root",
-        password="Home_0271", # PASSWORD MYSQL
-        database="bumil_db",
-        port=int(st.secrets.get("DB_PORT", 3307))
-    )
 
 # --- 3. SIDEBAR NAVIGATION ---
 with st.sidebar:
@@ -106,7 +105,7 @@ if menu == "📝 Jurnal & Suara":
         if submit:
             if catatan:
                 try:
-                    conn = get_connection()
+                    conn = get_db_connection()
                     cursor = conn.cursor()
                     query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting) VALUES (%s, %s, %s)"
                     cursor.execute(query, (kat, catatan, status))
@@ -162,7 +161,7 @@ elif menu == "🥗 Cek Nutrisi":
 
                             # --- PROSES DATABASE ---
                             try:
-                                conn = get_connection()
+                                conn = get_db_connection()
                                 cursor = conn.cursor()
                                 query = "INSERT INTO jurnal_kehamilan (kategori, catatan, metadata_ai) VALUES (%s, %s, %s)"
                                 cursor.execute(query, ("🥗 Nutrisi Makanan", f"Makan: {makanan_input}", hasil_ai))
