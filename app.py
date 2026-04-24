@@ -55,6 +55,28 @@ def save_to_db(query, params):
 def buat_link_wa(nomor, pesan):
     return f"https://wa.me/{nomor}?text={urllib.parse.quote(pesan)}"
 
+def register_user(username, password):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Cek apakah username sudah ada
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
+                conn.close()
+                return "exists"
+            
+            # Insert user baru
+            query = "INSERT INTO users (username, password, role) VALUES (%s, %s, 'user')"
+            cursor.execute(query, (username, password))
+            conn.commit()
+            conn.close()
+            return "success"
+        except Exception as e:
+            st.error(f"Error Registrasi: {e}")
+            return "error"
+    return "error"
+
 def login_user(username, password):
     conn = get_db_connection()
     if conn:
@@ -67,17 +89,40 @@ def login_user(username, password):
     return None
 
 # --- 5. LOGIKA AUTHENTICATION & GLOBAL UID (PILIHAN B) ---
+# --- LOGIKA AUTHENTICATION ---
 if 'user_info' not in st.session_state:
-    st.subheader("🔐 Login Bumil Project")
-    u_input = st.text_input("Username")
-    p_input = st.text_input("Password", type="password")
-    if st.button("Login"):
-        user = login_user(u_input, p_input)
-        if user:
-            st.session_state['user_info'] = user
-            st.rerun()
-        else:
-            st.error("Login Gagal.")
+    st.subheader("🔐 Akses Bumil Project")
+    
+    # Membuat Tab untuk Login dan Registrasi
+    tab_login, tab_regis = st.tabs(["Login", "Daftar Akun Baru"])
+    
+    with tab_login:
+        u_input = st.text_input("Username", key="login_u")
+        p_input = st.text_input("Password", type="password", key="login_p")
+        if st.button("Masuk"):
+            user = login_user(u_input, p_input)
+            if user:
+                st.session_state['user_info'] = user
+                st.rerun()
+            else:
+                st.error("Username atau password salah.")
+                
+    with tab_regis:
+        new_u = st.text_input("Buat Username", key="reg_u")
+        new_p = st.text_input("Buat Password", type="password", key="reg_p")
+        confirm_p = st.text_input("Konfirmasi Password", type="password", key="reg_cp")
+        
+        if st.button("Daftar Sekarang"):
+            if new_p != confirm_p:
+                st.warning("Password tidak cocok!")
+            elif len(new_u) < 3 or len(new_p) < 3:
+                st.warning("Username/Password terlalu pendek.")
+            else:
+                status = register_user(new_u, new_p)
+                if status == "success":
+                    st.success("Akun berhasil dibuat! Silakan login di tab sebelah.")
+                elif status == "exists":
+                    st.error("Username sudah terpakai, cari yang lain ya.")
 else:
     # DEFINISI GLOBAL UID (PILIHAN B)
     uid = st.session_state['user_info']['id']
@@ -137,17 +182,34 @@ else:
         conn = get_db_connection()
         if conn:
             st.subheader("📋 Daftar Rencana Bunda")
-            # Ambil Nomor Admin
-            df_admin = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
-            nomor_admin = df_admin['nomor_wa'].iloc if not df_admin.empty else "628123456789"
             
-            # Tabel filtered by UID
-            st.dataframe(pd.read_sql(f"SELECT nama_obat, dosis FROM master_obat WHERE user_id={uid}", conn))
-            st.dataframe(pd.read_sql(f"SELECT nama_rs_klinik, tgl_kontrol FROM jadwal_kontrol WHERE user_id={uid}", conn))
+            # 1. Ambil Nomor Admin
+            df_admin = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
+            nomor_admin = df_admin['nomor_wa'].iloc[0] if not df_admin.empty else "628123456789"
+            
+            # 2. Ambil Data Obat & Kontrol
+            # Gunakan params untuk keamanan database
+            df_obat = pd.read_sql("SELECT nama_obat, dosis FROM master_obat WHERE user_id=%s", conn, params=(uid,))
+            df_kontrol = pd.read_sql("SELECT nama_rs_klinik, tgl_kontrol, keperluan FROM jadwal_kontrol WHERE user_id=%s", conn, params=(uid,))
+            
+            st.write("**Daftar Obat:**")
+            st.dataframe(df_obat, use_container_width=True)
+            
+            st.write("**Jadwal Kontrol:**")
+            st.dataframe(df_kontrol, use_container_width=True)
+            
             conn.close()
 
-            # Tombol WA
-            link = buat_link_wa(nomor_admin, f"Halo, saya mau daftar {tujuan} di {rs}")
+            # 3. Logika Tombol WA agar tidak error jika data kosong
+            if not df_kontrol.empty:
+                # Ambil data kontrol terbaru untuk template pesan
+                rs_terakhir = df_kontrol['nama_rs_klinik'].iloc[0]
+                tujuan_terakhir = df_kontrol['keperluan'].iloc[0]
+                pesan_wa = f"Halo Admin, saya mau daftar {tujuan_terakhir} di {rs_terakhir}"
+            else:
+                pesan_wa = "Halo Admin, saya ingin berkonsultasi mengenai jadwal kontrol."
+
+            link = buat_link_wa(nomor_admin, pesan_wa)
             st.link_button("Daftar via WA 📲", link)
 
         # Bagian Pengaturan
@@ -160,18 +222,48 @@ else:
 
     # --- MENU 3: NUTRISI ---
     elif menu == "🥗 Cek Nutrisi":
-        st.header("🥗 Cek Nutrisi AI")
-        makanan = st.text_input("Bunda makan apa?")
-        if st.button("Analisis"):
-            with st.spinner("AI sedang berpikir..."):
-                res = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": f"Analisis gizi makanan bumil: {makanan}"}]
-                )
-                hasil = res.choices.message.content
-                st.markdown(hasil)
-                # Simpan ke DB dengan UID
-                save_to_db("INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)", (makanan, hasil, uid))
+        st.header("🥗 Cek Nutrisi")
+        st.write("Tanyakan apakah makanan tertentu aman atau cek kandungan gizinya untuk Bunda.")
+        
+        makanan = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Sate kambing atau Ikan salmon panggang")
+        
+        if st.button("Analisis Nutrisi"):
+            if makanan:
+                with st.spinner("AI sedang menganalisis kandungan gizi..."):
+                    try:
+                        # Pemanggilan API Groq
+                        res = client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=[
+                                {"role": "system", "content": "Kamu adalah ahli gizi spesialis kehamilan. Berikan jawaban yang edukatif, singkat, dan ramah."},
+                                {"role": "user", "content": f"Apakah makanan ini aman untuk ibu hamil dan apa gizinya: {makanan}"}
+                            ]
+                        )
+                        
+                        # PERHATIKAN: Kita pakai di sini untuk mengambil jawaban pertama
+                        hasil_ai = res.choices[0].message.content
+                        
+                        # Tampilkan hasil ke layar
+                        st.markdown("---")
+                        st.markdown(hasil_ai)
+                        
+                        # Simpan riwayat ke database (Gunakan UID agar tidak tertukar)
+                        query_simpan = "INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)"
+                        save_to_db(query_simpan, (makanan, hasil_ai, uid))
+                        st.success("Analisis berhasil disimpan ke riwayat Bunda!")
+                        
+                    except Exception as e:
+                        st.error(f"Gagal menghubungi AI: {e}")
+            else:
+                st.warning("Silakan ketik nama makanannya dulu ya, Bun.")
+
+        # Menampilkan riwayat makanan dari database
+        with st.expander("📜 Lihat Riwayat Makan Bunda"):
+            conn = get_db_connection()
+            if conn:
+                df_makan = pd.read_sql("SELECT tgl_catatan, nama_makanan FROM catatan_makanan WHERE user_id=%s ORDER BY tgl_catatan DESC", conn, params=(uid,))
+                st.dataframe(df_makan, use_container_width=True)
+                conn.close()
 
     # --- MENU 4: TANYA DOKTER ---
     elif menu == "👨‍⚕️ Tanya Dokter":
