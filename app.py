@@ -9,6 +9,39 @@ from groq import Groq
 # --- 1. KONFIGURASI HALAMAN (Wajib di Paling Atas) ---
 st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
 
+def inject_custom_css():
+    st.markdown("""
+        <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css">
+        
+        <style>
+        /* Font ala Notion */
+        html, body, [class*="css"] {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Styling khusus untuk Ikon Lucide agar sejajar dengan teks */
+        .lucide {
+            vertical-align: middle;
+            margin-right: 8px;
+            width: 20px;
+            height: 20px;
+        }
+        
+        /* Membuat header lebih bersih ala Notion */
+        .notion-header {
+            font-size: 28px;
+            font-weight: 700;
+            color: #37352f;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+# Panggil di awal fungsi main()
+inject_custom_css()
+
 # --- 2. VALIDASI SECRETS ---
 required_secrets = ["GROQ_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD"]
 missing_keys = [key for key in required_secrets if key not in st.secrets]
@@ -138,7 +171,8 @@ else:
 
     # --- MENU 1: JURNAL ---
     if menu == "📝 Jurnal":
-        st.header("📝 Jurnal Harian")
+        st.markdown('<div class="notion-header"><i class="lucide-book-open"></i> Jurnal Kehamilan</div>', unsafe_allow_html=True)
+        st.caption("Ruang tenang untuk mencatat setiap momen berharga Bunda.")
         audio = mic_recorder(start_prompt="Rekam Suara 🎙️", stop_prompt="Simpan ✅", key='recorder')
         
         with st.form("form_jurnal"):
@@ -156,17 +190,34 @@ else:
 
     # --- MENU 2: KONTROL & OBAT ---
     elif menu == "📅 Kontrol & Obat":
-        st.header("📅 Kontrol & Obat")
+        st.markdown('<div class="notion-header"><i class="lucide-pill"></i> Manajemen Obat & Vitamin</div>', unsafe_allow_html=True)
+        st.caption("Pantau asupan suplemen dan obat rutin Bunda untuk kesehatan Si Kecil.")
+        st.divider()
         
         # Form Obat
-        with st.form("form_obat"):
-            nama_obat = st.text_input("Nama Obat")
-            dosis = st.text_input("Dosis")
-            waktu = st.time_input("Jam")
-            if st.form_submit_button("Simpan Obat"):
-                query = "INSERT INTO master_obat (nama_obat, dosis, waktu_konsumsi, user_id) VALUES (%s, %s, %s, %s)"
-                if save_to_db(query, (nama_obat, dosis, str(waktu), uid)):
-                    st.success("Obat Tersimpan!")
+        col_input, col_info = st.columns() 
+        with col_input:
+            st.markdown('### <i class="lucide-plus-circle"></i> Tambah Jadwal Baru', unsafe_allow_html=True)
+            with st.form("form_obat", clear_on_submit=True):
+
+                nama_obat = st.text_input("Nama Obat", placeholder="misal: Folavit 400mcg")
+
+            col1, col2 = st.columns(2)
+            with col1: 
+                dosis = st.text_input("Dosis", placeholder="1 x 1 tablet/hari")
+            with col2:
+                waktu = st.time_input("Jam konsumsi")
+            
+            submit_obat = st.form_submit_button("Simpan ke Jurnal")
+
+            if submit_obat:
+                if nama_obat: # Validasi sederhana agar tidak simpan data kosong
+                    query = "INSERT INTO master_obat (nama_obat, dosis, waktu_konsumsi, user_id) VALUES (%s, %s, %s, %s)"
+            if save_to_db(query, (nama_obat, dosis, str(waktu), uid)):
+                # Gunakan toast agar tampilan tetap bersih (pop-up kecil)
+                st.toast(f"✅ {nama_obat} berhasil dicatat!", icon='💊')
+            else:
+                st.error("Nama obat tidak boleh kosong ya, Bun.")
 
         # Form Dokter
         with st.form("form_dokter"):
@@ -192,13 +243,23 @@ else:
             df_obat = pd.read_sql("SELECT nama_obat, dosis FROM master_obat WHERE user_id=%s", conn, params=(uid,))
             df_kontrol = pd.read_sql("SELECT nama_rs_klinik, tgl_kontrol, keperluan FROM jadwal_kontrol WHERE user_id=%s", conn, params=(uid,))
             
-            st.write("**Daftar Obat:**")
-            st.dataframe(df_obat, use_container_width=True)
+            # Visualisasi Tabel Obat
+            st.markdown('### <i class="lucide-pill-bottle"></i> Daftar Konsumsi Obat', unsafe_allow_html=True)
+            if not df_obat.empty:
+                st.dataframe(df_obat, use_container_width=True, hide_index=True)
+            else:
+                st.info("Belum ada catatan obat hari ini.")
             
-            st.write("**Jadwal Kontrol:**")
-            st.dataframe(df_kontrol, use_container_width=True)
-            
+            # Visualisasi Tabel Kontrol
+            st.markdown('### <i class="lucide-stethoscopes"></i> Jadwal Kontrol Mendatang', unsafe_allow_html=True)
+            if not df_kontrol.empty:
+                st.dataframe(df_kontrol, use_container_width=True, hide_index=True)
+            else:
+                st.info("Tidak ada jadwal kontrol yang terdaftar.")
+
             conn.close()
+
+            st.divider()
 
             # 3. Logika Tombol WA agar tidak error jika data kosong
             if not df_kontrol.empty:
@@ -210,19 +271,26 @@ else:
                 pesan_wa = "Halo Admin, saya ingin berkonsultasi mengenai jadwal kontrol."
 
             link = buat_link_wa(nomor_admin, pesan_wa)
-            st.link_button("Daftar via WA 📲", link)
+            
+            # Tombol pendaftaran dengan icon pesan
+            st.markdown('<div style="text-align: center; margin-top: 20px;">', unsafe_allow_html=True)
+            st.link_button("📲 Daftar via WA Admin", link, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # Bagian Pengaturan
         with st.expander("⚙️ Pengaturan Nomor"):
-            n_baru = st.text_input("Ganti Nomor WA Admin")
-            if st.button("Update"):
+            st.caption("Konfigurasi Nomor WA Admin untuk Bunda")
+            n_baru = st.text_input("Ganti Nomor WA Admin", placeholder="Contoh: 628123456789")
+            
+            # Style Tombol
+            if st.button("Update Nomor"):
                 if save_to_db("UPDATE kontak_layanan SET nomor_wa=%s WHERE tipe='Admin'", (n_baru,)):
-                    st.success("Updated!")
+                    st.success("Berhasil disimpan untuk Bunda !", icon='✅')
                     st.rerun()
 
     # --- MENU 3: NUTRISI ---
     elif menu == "🥗 Cek Nutrisi":
-        st.header("🥗 Cek Nutrisi")
+        st.markdown('### <i class="lucide-apple"></i> Makanan terbaik untuk Bunda', unsafe_allow_html=True)
         st.write("Tanyakan apakah makanan tertentu aman atau cek kandungan gizinya untuk Bunda.")
         
         makanan = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Sate kambing atau Ikan salmon panggang")
