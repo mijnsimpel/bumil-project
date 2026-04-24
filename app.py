@@ -195,7 +195,7 @@ else:
         st.divider()
         
         # Form Obat
-        col_input, col_info = st.columns([]) 
+        col_input, col_info = st.columns([2, 1]) 
         with col_input:
             st.markdown('### <i class="lucide-plus-circle"></i> Tambah Jadwal Baru', unsafe_allow_html=True)
             with st.form("form_obat", clear_on_submit=True):
