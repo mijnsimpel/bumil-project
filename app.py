@@ -304,52 +304,63 @@ if conn:
     
     conn.close()
 
-    # --- MENU 3: NUTRISI ---
+ # --- MENU 3: NUTRISI ---
 elif menu == "🥗 Cek Nutrisi":
-        st.markdown('### <i class="lucide-apple"></i> Makanan terbaik untuk Bunda', unsafe_allow_html=True)
-        st.write("Tanyakan apakah makanan tertentu aman atau cek kandungan gizinya untuk Bunda.")
+    # Gunakan Header ala Notion
+    st.markdown('<div class="notion-header"><i class="lucide-apple"></i> Nutrisi Bunda</div>', unsafe_allow_html=True)
+    st.caption("Cek keamanan dan kandungan gizi makanan untuk mendukung tumbuh kembang Si Kecil.")
+    st.divider()
+
+    # Layout 2 kolom untuk input
+    c_in, c_help = st.columns()
+    
+    with c_in:
+        makanan = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Ikan salmon panggang")
+        btn_analisis = st.button("Analisis Nutrisi", use_container_width=True)
         
-        makanan = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Sate kambing atau Ikan salmon panggang")
-        
-        if st.button("Analisis Nutrisi"):
+        if btn_analisis:
             if makanan:
-                with st.spinner("AI sedang menganalisis kandungan gizi..."):
+                with st.spinner("AI sedang menganalisis..."):
                     try:
-                        # Pemanggilan API Groq
                         res = client.chat.completions.create(
                             model="llama-3.3-70b-versatile",
                             messages=[
-                                {"role": "system", "content": "Kamu adalah ahli gizi spesialis kehamilan. Berikan jawaban yang edukatif, singkat, dan ramah."},
+                                {"role": "system", "content": "Kamu adalah ahli gizi spesialis kehamilan. Berikan jawaban yang edukatif, singkat, dan ramah menggunakan format markdown yang bersih."},
                                 {"role": "user", "content": f"Apakah makanan ini aman untuk ibu hamil dan apa gizinya: {makanan}"}
                             ]
                         )
+                        hasil_ai = res.choices.message.content
                         
-                        # PERHATIKAN: Kita pakai di sini untuk mengambil jawaban pertama
-                        hasil_ai = res.choices[0].message.content
-                        
-                        # Tampilkan hasil ke layar
+                        # Tampilkan hasil dengan card minimalis
                         st.markdown("---")
                         st.markdown(hasil_ai)
                         
-                        # Simpan riwayat ke database (Gunakan UID agar tidak tertukar)
+                        # Simpan ke DB
                         query_simpan = "INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)"
                         save_to_db(query_simpan, (makanan, hasil_ai, uid))
-                        st.success("Analisis berhasil disimpan ke riwayat Bunda!")
+                        st.toast("Analisis disimpan!", icon='✅')
                         
                     except Exception as e:
                         st.error(f"Gagal menghubungi AI: {e}")
             else:
-                st.warning("Silakan ketik nama makanannya dulu ya, Bun.")
+                st.warning("Isi nama makanannya dulu ya, Bun.")
 
-        # Menampilkan riwayat makanan dari database
-        with st.expander("📜 Lihat Riwayat Makan Bunda"):
-            conn = get_db_connection()
-            if conn:
-                df_makan = pd.read_sql("SELECT tgl_catatan, nama_makanan FROM catatan_makanan WHERE user_id=%s ORDER BY tgl_catatan DESC", conn, params=(uid,))
-                st.dataframe(df_makan, use_container_width=True)
-                conn.close()
+    with c_help:
+        st.info("💡 **Tips:** Hindari makanan mentah atau setengah matang selama kehamilan ya, Bun.")
 
-    # --- MENU 4: TANYA DOKTER ---
+    # Riwayat (Tetap di bawah)
+    st.write("")
+    with st.expander("📜 Riwayat Nutrisi Bunda"):
+        conn = get_db_connection()
+        if conn:
+            df_makan = pd.read_sql("SELECT tgl_catatan as Tanggal, nama_makanan as Makanan FROM catatan_makanan WHERE user_id=%s ORDER BY tgl_catatan DESC", conn, params=(uid,))
+            st.dataframe(df_makan, use_container_width=True, hide_index=True)
+            conn.close()
+
+# --- MENU 4: TANYA DOKTER ---
 elif menu == "👨‍⚕️ Tanya Dokter":
-        st.header("👨‍⚕️ Tanya Dokter")
-        st.info("Fitur Resume Jurnal sedang disiapkan.")
+    st.markdown('<div class="notion-header"><i class="lucide-message-square"></i> Tanya Dokter (Beta)</div>', unsafe_allow_html=True)
+    st.caption("Dapatkan ringkasan jurnal kesehatan Bunda untuk dikonsultasikan ke Dokter.")
+    st.divider()
+    
+    st.info("Fitur Resume Jurnal sedang disiapkan untuk membantu Bunda berkomunikasi lebih lancar dengan Dokter.")
