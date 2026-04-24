@@ -33,6 +33,22 @@ def get_db_connection():
         st.error(f"Gagal menyambungkan ke TiDB Cloud: {e}")
         return None
 
+# Fungsi Helper
+def save_to_db(query, params):
+    try:
+        conn = get_db_connection() # Di sini dia memanggil fungsi nomor 1
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as e:
+        st.error(f"Gagal Simpan ke Database: {e}")
+        return False
+    return False
+
+
 # 4. CEK KONEKSI AWAL
 db_conn = get_db_connection()
 if db_conn and db_conn.is_connected():
@@ -92,9 +108,7 @@ if menu == "📝 Jurnal & Suara":
             kat = st.selectbox("Kategori", [
                 "📝 Jurnal & Keluhan", 
                 "🦶 Milestone (Tendangan, dll)", 
-                "💊 Obat & Vitamin", 
-                "🥗 Nutrisi Makanan", 
-                "📅 Jadwal Kontrol Dokter"
+                "💖 Momen bahagia"
             ])
         with col2:
             status = st.checkbox("Tandai sebagai Kejadian Penting ⭐")
@@ -107,10 +121,10 @@ if menu == "📝 Jurnal & Suara":
                 try:
                     conn = get_db_connection()
                     cursor = conn.cursor()
-                    query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting) VALUES (%s, %s, %s)"
-                    cursor.execute(query, (kat, catatan, status))
+                    query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting, metadata_ai) VALUES (%s, %s, %s, %s)"
+                    cursor.execute(query, (kat, catatan, status, ""))
                     conn.commit()
-                    st.success("Catatan berhasil disimpan ke database!")
+                    st.success("Catatan berhasil Bunda simpan!")
                     conn.close()
                 except Exception as e:
                     st.error(f"Gagal menyimpan: {e}")
@@ -119,9 +133,32 @@ if menu == "📝 Jurnal & Suara":
 
 # --- MENU 2: KONTROL & OBAT ---
 elif menu == "📅 Kontrol & Obat":
-    st.title("📅 Kontrol & Reminder")
-    st.info("Fitur ini akan membantu Bunda mengingat jadwal dokter dan rutin minum obat.")
-    # Nanti kita tambahkan kalender interaktif di sini
+    st.header("📅 Jadwal Kontrol & Vitamin")
+    st.write("Catat jadwal kontrol dokter atau jadwal minum vitamin Bunda.")
+
+    # Membuat Form Input
+    with st.form("form_kontrol_obat"):
+        tipe = st.selectbox("Jenis Kegiatan", ["Obat", "Vitamin", "Kontrol Dokter", "Vaksin"])
+        nama = st.text_input("Nama Obat atau Deskripsi Kegiatan", placeholder="Contoh: Asam Folat atau Kontrol RS Hermina")
+        tgl = st.date_input("Pilih Tanggal")
+        
+        # Tombol Submit di dalam Form
+        submit = st.form_submit_button("Simpan Jadwal")
+
+        if submit:
+            if nama: # Validasi agar nama tidak kosong
+                # --- DI SINI TEMPATNYA ---
+                # 1. Siapkan Query
+                query = "INSERT INTO jadwal_kontrol_obat (tipe_kegiatan, nama_kegiatan, jadwal_waktu) VALUES (%s, %s, %s)"
+                
+                # 2. Siapkan Data (Pastikan format tanggal sesuai SQL)
+                jadwal_sql = tgl.strftime('%Y-%m-%d 00:00:00')
+                
+                # 3. Panggil Fungsi Kurir (save_to_db)
+                if save_to_db(query, (tipe, nama, jadwal_sql)):
+                    st.success(f"Berhasil menyimpan: {nama}! Semangat sehat ya Bunda! ✨")
+            else:
+                st.warning("Mohon isi nama obat atau kegiatannya dulu ya, Bun.")
 
 # --- MENU 3: CEK NUTRISI ---
 elif menu == "🥗 Cek Nutrisi":
