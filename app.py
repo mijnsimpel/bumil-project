@@ -197,18 +197,31 @@ else:
             # Tampilkan Tabel Obat
             st.markdown('### <i class="lucide-pill-bottle"></i> Daftar Obat', unsafe_allow_html=True)
             df_o = pd.read_sql("SELECT nama_obat, dosis FROM master_obat WHERE user_id=%s", conn, params=(uid,))
-            st.dataframe(df_o, use_container_width=True, hide_index=True) if not df_o.empty else st.info("Kosong")
+            if not df_o.empty:
+                st.dataframe(df_o, use_container_width=True, hide_index=True)
             
             # Tampilkan Tabel Kontrol
-            st.markdown('### <i class="lucide-stethoscope"></i> Jadwal Kontrol', unsafe_allow_html=True)
+            st.markdown('### <i class="lucide-stethoscope"></i> Jadwal Kontrol Mendatang', unsafe_allow_html=True)
             df_k = pd.read_sql("SELECT nama_rs_klinik, tgl_kontrol, keperluan FROM jadwal_kontrol WHERE user_id=%s ORDER BY tgl_kontrol ASC", conn, params=(uid,))
+            
             if not df_k.empty:
                 st.dataframe(df_k, use_container_width=True, hide_index=True)
                 # Link WA
                 df_a = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
-                no_admin = df_a['nomor_wa'].iloc if not df_a.empty else "62812"
-                link = buat_link_wa(no_admin, f"Saya mau daftar {df_k['keperluan'].iloc}")
-                st.link_button("📲 Daftar via WA", link, use_container_width=True)
+                no_admin = df_a['nomor_wa'].iloc[0] if not df_a.empty else "62812"
+                
+                # Ambil detail kontrol terbaru
+                rs_tujuan = df_k['nama_rs_klinik'].iloc[0]
+                keperluan = df_k['keperluan'].iloc[0]
+                
+                pesan_wa = f"Halo Admin, saya mau daftar {keperluan} di {rs_tujuan}"
+                link = buat_link_wa(no_admin, pesan_wa)
+                
+                st.write("") # Spacer kecil
+                st.link_button("📲 Daftar via WA Admin", link, use_container_width=True)
+            else:
+                st.info("Tidak ada jadwal kontrol yang terdaftar.")
+            
             conn.close()
 
     # --- MENU 3: NUTRISI ---
