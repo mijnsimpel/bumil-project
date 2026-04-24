@@ -2,41 +2,46 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 import io
+import urllib.parse
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 
+# --- 1. KONFIGURASI HALAMAN (Wajib di Paling Atas) ---
+st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
 
-# 1. VALIDASI KESELURUHAN (Cek semua kunci di awal agar aman)
+# --- 2. VALIDASI SECRETS ---
 required_secrets = ["GROQ_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD"]
 missing_keys = [key for key in required_secrets if key not in st.secrets]
-
 if missing_keys:
-    st.error(f"Konfigurasi belum lengkap! Key berikut hilang di Secrets: {', '.join(missing_keys)}")
+    st.error(f"Missing Keys: {', '.join(missing_keys)}")
     st.stop()
 
-# 2. INISIALISASI AI
+# --- 3. INISIALISASI AI & CSS ---
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+st.markdown("""
+    <style>
+    .main { background-color: #fff5f7; }
+    .stButton>button { width: 100%; border-radius: 20px; background-color: #ff4b6b; color: white; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 3. FUNGSI KONEKSI DATABASE (Lebih aman & fleksibel)
+# --- 4. FUNGSI DATABASE & HELPER ---
 def get_db_connection():
     try:
-        conn = mysql.connector.connect(
+        return mysql.connector.connect(
             host=st.secrets["DB_HOST"],
             port=st.secrets.get("DB_PORT", 4000),
             user=st.secrets["DB_USER"],
             password=st.secrets["DB_PASSWORD"],
-            database=st.secrets.get("DB_NAME", "test"),
-            ssl_disabled=False
+            database=st.secrets.get("DB_NAME", "test")
         )
-        return conn
     except Exception as e:
-        st.error(f"Gagal menyambungkan ke TiDB Cloud: {e}")
+        st.error(f"Koneksi Gagal: {e}")
         return None
 
-# Fungsi Helper
 def save_to_db(query, params):
     try:
-        conn = get_db_connection() # Di sini dia memanggil fungsi nomor 1
+        conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
@@ -44,205 +49,131 @@ def save_to_db(query, params):
             conn.close()
             return True
     except Exception as e:
-        st.error(f"Gagal Simpan ke Database: {e}")
-        return False
+        st.error(f"Database Error: {e}")
     return False
 
+def buat_link_wa(nomor, pesan):
+    return f"https://wa.me/{nomor}?text={urllib.parse.quote(pesan)}"
 
-# 4. CEK KONEKSI AWAL
-db_conn = get_db_connection()
-if db_conn and db_conn.is_connected():
-    st.success("Sistem AI & Database Cloud siap digunakan! 🚀☁️")
-    db_conn.close()
+def login_user(username, password):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT * FROM users WHERE username = %s AND password = %s"
+        cursor.execute(query, (username, password))
+        user = cursor.fetchone()
+        conn.close()
+        return user
+    return None
 
+# --- 5. LOGIKA AUTHENTICATION & GLOBAL UID (PILIHAN B) ---
+if 'user_info' not in st.session_state:
+    st.subheader("🔐 Login Bumil Project")
+    u_input = st.text_input("Username")
+    p_input = st.text_input("Password", type="password")
+    if st.button("Login"):
+        user = login_user(u_input, p_input)
+        if user:
+            st.session_state['user_info'] = user
+            st.rerun()
+        else:
+            st.error("Login Gagal.")
+else:
+    # DEFINISI GLOBAL UID (PILIHAN B)
+    uid = st.session_state['user_info']['id']
+    username = st.session_state['user_info']['username']
 
-# --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
+    with st.sidebar:
+        st.title("🤰 Bumil Care")
+        st.write(f"Logged in: **{username}**")
+        menu = st.radio("Layanan:", ["📝 Jurnal", "📅 Kontrol & Obat", "🥗 Cek Nutrisi", "👨‍⚕️ Tanya Dokter"])
+        if st.button("Log Out"):
+            del st.session_state['user_info']
+            st.rerun()
 
-# --- CSS CUSTOM UNTUK UI LEBIH RAPI ---
-st.markdown("""
-    <style>
-    .main { background-color: #fff5f7; }
-    .stButton>button { width: 100%; border-radius: 20px; border: none; background-color: #ff4b6b; color: white; }
-    .stTextInput>div>div>input { border-radius: 10px; }
-    div[data-testid="stExpander"] { border: none; box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.title("🤰 Bumil Care")
-    st.markdown("---")
-    menu = st.radio(
-        "Pilih Layanan:",
-        ["📝 Jurnal & Suara", "📅 Kontrol & Obat", "🥗 Cek Nutrisi", "👨‍⚕️ Tanya Dokter"]
-    )
-    st.markdown("---")
-    st.info("Log: Database Connected ✅")
-
-# --- 4. LOGIKA MENU ---
-
-# --- MENU 1: JURNAL & SUARA ---
-if menu == "📝 Jurnal & Suara":
-    st.header("📝 Jurnal Harian Bunda")
-    st.write("Ceritakan apa yang Bunda rasakan hari ini.")
-
-    # Bagian Rekam Suara
-    st.subheader("🎤 Rekam Suara")
-    audio = mic_recorder(
-        start_prompt="Mulai Rekam 🎙️",
-        stop_prompt="Selesai & Simpan ✅",
-        key='recorder'
-    )
-
-    if audio:
-        st.audio(audio['bytes'])
-        st.success("Suara berhasil direkam! (AI sedang memproses teks...)")
-
-    st.divider()
-
-    # Bagian Form Input Manual
-    with st.form("form_jurnal"):
-        col1, col2 = st.columns(2)
-        with col1:
-            kat = st.selectbox("Kategori", [
-                "📝 Jurnal & Keluhan", 
-                "🦶 Milestone (Tendangan, dll)", 
-                "💖 Momen bahagia"
-            ])
-        with col2:
-            status = st.checkbox("Tandai sebagai Kejadian Penting ⭐")
+    # --- MENU 1: JURNAL ---
+    if menu == "📝 Jurnal":
+        st.header("📝 Jurnal Harian")
+        audio = mic_recorder(start_prompt="Rekam Suara 🎙️", stop_prompt="Simpan ✅", key='recorder')
         
-        catatan = st.text_area("Catatan Detail:", placeholder="Tulis keluhan atau momen bahagia di sini...")
-        submit = st.form_submit_button("Simpan ke Jurnal")
+        with st.form("form_jurnal"):
+            kat = st.selectbox("Kategori", ["📝 Jurnal & Keluhan", "🦶 Milestone", "💖 Momen bahagia"])
+            status = st.checkbox("Penting ⭐")
+            catatan = st.text_area("Catatan:")
+            if st.form_submit_button("Simpan"):
+                if catatan:
+                    # TAMBAHKAN user_id (uid) di sini!
+                    query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting, user_id) VALUES (%s, %s, %s, %s)"
+                    if save_to_db(query, (kat, catatan, status, uid)):
+                        st.success("Tersimpan!")
+                else:
+                    st.warning("Isi catatan dulu.")
 
-        if submit:
-            if catatan:
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting, metadata_ai) VALUES (%s, %s, %s, %s)"
-                    cursor.execute(query, (kat, catatan, status, ""))
-                    conn.commit()
-                    st.success("Catatan berhasil Bunda simpan!")
-                    conn.close()
-                except Exception as e:
-                    st.error(f"Gagal menyimpan: {e}")
-            else:
-                st.warning("Catatan tidak boleh kosong, Bun!")
-
-# --- MENU 2: KONTROL & OBAT ---
-elif menu == "📅 Kontrol & Obat":
-    st.header("📅 Jadwal Kontrol & Vitamin")
-    st.write("Catat jadwal kontrol dokter atau jadwal minum vitamin Bunda.")
-
-    # Membuat Form Input
-    with st.form("form_kontrol_obat"):
-        tipe = st.selectbox("Jenis Kegiatan", ["Obat", "Vitamin", "Kontrol Dokter", "Vaksin"])
-        nama = st.text_input("Nama Obat atau Deskripsi Kegiatan", placeholder="Contoh: Asam Folat atau Kontrol RS Hermina")
-        tgl = st.date_input("Pilih Tanggal")
+    # --- MENU 2: KONTROL & OBAT ---
+    elif menu == "📅 Kontrol & Obat":
+        st.header("📅 Kontrol & Obat")
         
-        # Tombol Submit di dalam Form
-        submit = st.form_submit_button("Simpan Jadwal")
+        # Form Obat
+        with st.form("form_obat"):
+            nama_obat = st.text_input("Nama Obat")
+            dosis = st.text_input("Dosis")
+            waktu = st.time_input("Jam")
+            if st.form_submit_button("Simpan Obat"):
+                query = "INSERT INTO master_obat (nama_obat, dosis, waktu_konsumsi, user_id) VALUES (%s, %s, %s, %s)"
+                if save_to_db(query, (nama_obat, dosis, str(waktu), uid)):
+                    st.success("Obat Tersimpan!")
 
-        if submit:
-            if nama: # Validasi agar nama tidak kosong
-                # --- DI SINI TEMPATNYA ---
-                # 1. Siapkan Query
-                query = "INSERT INTO jadwal_kontrol_obat (tipe_kegiatan, nama_kegiatan, jadwal_waktu) VALUES (%s, %s, %s)"
-                
-                # 2. Siapkan Data (Pastikan format tanggal sesuai SQL)
-                jadwal_sql = tgl.strftime('%Y-%m-%d 00:00:00')
-                
-                # 3. Panggil Fungsi Kurir (save_to_db)
-                if save_to_db(query, (tipe, nama, jadwal_sql)):
-                    st.success(f"Berhasil menyimpan: {nama}! Semangat sehat ya Bunda! ✨")
-            else:
-                st.warning("Mohon isi nama obat atau kegiatannya dulu ya, Bun.")
-        
-        # Tambahkan ini di bawah blok "if submit" Menu 2
-        st.divider()
-        st.subheader("📋 Daftar Jadwal Bunda")
+        # Form Dokter
+        with st.form("form_dokter"):
+            rs = st.text_input("Nama RS")
+            tgl = st.date_input("Tanggal")
+            tujuan = st.selectbox("Tujuan", ["USG", "Rutin", "Lab"])
+            if st.form_submit_button("Simpan Jadwal"):
+                query = "INSERT INTO jadwal_kontrol (nama_rs_klinik, tgl_kontrol, keperluan, user_id) VALUES (%s, %s, %s, %s)"
+                if save_to_db(query, (rs, tgl, tujuan, uid)):
+                    st.success("Jadwal Tersimpan!")
 
+        # Tampilkan Data (Filtered by UID)
         conn = get_db_connection()
         if conn:
-            # Ambil data terbaru
-            query = "SELECT tipe_kegiatan, nama_kegiatan, jadwal_waktu FROM jadwal_kontrol_obat ORDER BY jadwal_waktu ASC"
-            df = pd.read_sql(query, conn)
+            st.subheader("📋 Daftar Rencana Bunda")
+            # Ambil Nomor Admin
+            df_admin = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
+            nomor_admin = df_admin['nomor_wa'].iloc if not df_admin.empty else "628123456789"
             
-            if not df.empty:
-                # Menampilkan tabel yang cantik
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.info("Belum ada jadwal yang tersimpan.")
+            # Tabel filtered by UID
+            st.dataframe(pd.read_sql(f"SELECT nama_obat, dosis FROM master_obat WHERE user_id={uid}", conn))
+            st.dataframe(pd.read_sql(f"SELECT nama_rs_klinik, tgl_kontrol FROM jadwal_kontrol WHERE user_id={uid}", conn))
             conn.close()
 
-# --- MENU 3: CEK NUTRISI ---
-elif menu == "🥗 Cek Nutrisi":
-        st.title("🥗 Analisis Nutrisi")
-        st.write("Cek apakah makanan Bunda sudah memenuhi standar gizi kehamilan.")
-        
-        metode = st.radio("Pilih Cara Cek:", ["⌨️ Ketik Nama Makanan", "📸 Ambil Foto Makanan"], horizontal=True)
-        
-        if metode == "⌨️ Ketik Nama Makanan":
-            makanan_input = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Pecel lele pake nasi")
-            
-            if st.button("Analisis Nutrisi"):
-                if makanan_input:
-                    with st.spinner(f"Tunggu sebentar sedang menganalisis gizi {makanan_input}..."):
-                        prompt = f"""
-                        Kamu adalah ahli gizi khusus ibu hamil. Analisis menu ini secara singkat & padat: {makanan_input}.
-                        Analisis dalam bahasa Indonesia yang ramah, suportif, dan panggil 'Bunda':
-                        1. Apa saja Nutrisi utama?
-                        2. Manfaat untuk ibu hamil dan janin?
-                        3. Apa saran tambahan nutrisi tambahan?
-                        """
-                        try:
-                            # --- PROSES AI ---
-                            completion = client.chat.completions.create(
-                                model="llama-3.3-70b-versatile",
-                                messages=[
-                                    {"role": "system", "content": "Kamu adalah ahli gizi ibu hamil yang ramah."},
-                                    {"role": "user", "content": prompt}
-                                ]
-                            )
+            # Tombol WA
+            link = buat_link_wa(nomor_admin, f"Halo, saya mau daftar {tujuan} di {rs}")
+            st.link_button("Daftar via WA 📲", link)
 
-                            # Perhatikan di bawah ini, ini penting agar tidak error
-                            hasil_ai = completion.choices[0].message.content
-                        
-                            st.markdown(f"### 📋 Hasil Analisis untuk: {makanan_input}")
-                            st.markdown(hasil_ai)
+        # Bagian Pengaturan
+        with st.expander("⚙️ Pengaturan Nomor"):
+            n_baru = st.text_input("Ganti Nomor WA Admin")
+            if st.button("Update"):
+                if save_to_db("UPDATE kontak_layanan SET nomor_wa=%s WHERE tipe='Admin'", (n_baru,)):
+                    st.success("Updated!")
+                    st.rerun()
 
-                            # --- PROSES DATABASE ---
-                            try:
-                                conn = get_db_connection()
-                                cursor = conn.cursor()
-                                query = "INSERT INTO catatan_makanan (nama_makanan, catatan nutrisi) VALUES (%s, %s)"
-                                cursor.execute(query, ("🥗 Nutrisi Makanan", f"Makan: {makanan_input}", hasil_ai))
-                                conn.commit()
-                                conn.close()
-                            except Exception as db_error:
-                                st.error(f"Gagal simpan ke database: {db_error}")
-                        
-                        except Exception as ai_error:
-                            st.error(f"Gagal menghubungi AI: {ai_error}")
-                else:
-                    st.warning("Isi dulu nama makanannya ya, Bun.")
-        
-        else:
-            st.camera_input("Ambil Foto Makanan")
-            st.caption("Gunakan kamera untuk mendeteksi nutrisi secara otomatis.")
+    # --- MENU 3: NUTRISI ---
+    elif menu == "🥗 Cek Nutrisi":
+        st.header("🥗 Cek Nutrisi AI")
+        makanan = st.text_input("Bunda makan apa?")
+        if st.button("Analisis"):
+            with st.spinner("AI sedang berpikir..."):
+                res = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": f"Analisis gizi makanan bumil: {makanan}"}]
+                )
+                hasil = res.choices.message.content
+                st.markdown(hasil)
+                # Simpan ke DB dengan UID
+                save_to_db("INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)", (makanan, hasil, uid))
 
-# --- MENU 4: TANYA DOKTER ---
-elif menu == "👨‍⚕️ Tanya Dokter":
-    st.title("👨‍⚕️ Konsultasi Dokter")
-    with st.container(border=True):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            nama_dr = st.text_input("Nama Dokter:", value="dr. Sarah, Sp.OG")
-        with col_b:
-            wa_dr = st.text_input("Nomor WhatsApp:", value="628123456789")
-        
-        if st.button("📲 Kirim Resume Jurnal ke WhatsApp"):
-            st.toast("Menyiapkan ringkasan...", icon="⏳")
-            st.write("Fitur integrasi WhatsApp sedang dikembangkan.")
+    # --- MENU 4: TANYA DOKTER ---
+    elif menu == "👨‍⚕️ Tanya Dokter":
+        st.header("👨‍⚕️ Tanya Dokter")
+        st.info("Fitur Resume Jurnal sedang disiapkan.")
