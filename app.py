@@ -6,59 +6,31 @@ import urllib.parse
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 
-# --- 1. KONFIGURASI HALAMAN (Wajib di Paling Atas) ---
+# --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Bumil Super-App", page_icon="🤰", layout="wide")
 
 def inject_custom_css():
     st.markdown("""
         <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css">
-        
         <style>
-        /* Font ala Notion */
-        html, body, [class*="css"] {
-            font-family: 'Inter', sans-serif;
-        }
-
-        /* Styling khusus untuk Ikon Lucide agar sejajar dengan teks */
-        .lucide {
-            vertical-align: middle;
-            margin-right: 8px;
-            width: 20px;
-            height: 20px;
-        }
-        
-        /* Membuat header lebih bersih ala Notion */
-        .notion-header {
-            font-size: 28px;
-            font-weight: 700;
-            color: #37352f;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-        }
+        html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+        .lucide { vertical-align: middle; margin-right: 8px; width: 20px; height: 20px; }
+        .notion-header { font-size: 28px; font-weight: 700; color: #37352f; margin-bottom: 10px; display: flex; align-items: center; }
+        .main { background-color: #fff5f7; }
+        .stButton>button { width: 100%; border-radius: 20px; background-color: #ff4b6b; color: white; }
         </style>
     """, unsafe_allow_html=True)
 
-# Panggil di awal fungsi main()
 inject_custom_css()
 
-# --- 2. VALIDASI SECRETS ---
-required_secrets = ["GROQ_API_KEY", "DB_HOST", "DB_USER", "DB_PASSWORD"]
-missing_keys = [key for key in required_secrets if key not in st.secrets]
-if missing_keys:
-    st.error(f"Missing Keys: {', '.join(missing_keys)}")
+# --- 2. VALIDASI SECRETS & INISIALISASI ---
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("Missing GROQ_API_KEY in secrets!")
     st.stop()
 
-# --- 3. INISIALISASI AI & CSS ---
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-st.markdown("""
-    <style>
-    .main { background-color: #fff5f7; }
-    .stButton>button { width: 100%; border-radius: 20px; background-color: #ff4b6b; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
 
-# --- 4. FUNGSI DATABASE & HELPER ---
+# --- 3. FUNGSI DATABASE ---
 def get_db_connection():
     try:
         return mysql.connector.connect(
@@ -88,45 +60,36 @@ def save_to_db(query, params):
 def buat_link_wa(nomor, pesan):
     return f"https://wa.me/{nomor}?text={urllib.parse.quote(pesan)}"
 
-def register_user(username, password):
-    conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            # Cek apakah username sudah ada
-            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-            if cursor.fetchone():
-                conn.close()
-                return "exists"
-            
-            # Insert user baru
-            query = "INSERT INTO users (username, password, role) VALUES (%s, %s, 'user')"
-            cursor.execute(query, (username, password))
-            conn.commit()
-            conn.close()
-            return "success"
-        except Exception as e:
-            st.error(f"Error Registrasi: {e}")
-            return "error"
-    return "error"
-
 def login_user(username, password):
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor(dictionary=True)
-        query = "SELECT * FROM users WHERE username = %s AND password = %s"
-        cursor.execute(query, (username, password))
+        cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
         user = cursor.fetchone()
         conn.close()
         return user
     return None
 
-# --- 5. LOGIKA AUTHENTICATION & GLOBAL UID (PILIHAN B) ---
-# --- LOGIKA AUTHENTICATION ---
+def register_user(username, password):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
+                conn.close()
+                return "exists"
+            cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, 'user')", (username, password))
+            conn.commit()
+            conn.close()
+            return "success"
+        except Exception as e:
+            return "error"
+    return "error"
+
+# --- 4. LOGIKA AUTHENTICATION ---
 if 'user_info' not in st.session_state:
     st.subheader("🔐 Akses Bumil Project")
-    
-    # Membuat Tab untuk Login dan Registrasi
     tab_login, tab_regis = st.tabs(["Login", "Daftar Akun Baru"])
     
     with tab_login:
@@ -144,20 +107,17 @@ if 'user_info' not in st.session_state:
         new_u = st.text_input("Buat Username", key="reg_u")
         new_p = st.text_input("Buat Password", type="password", key="reg_p")
         confirm_p = st.text_input("Konfirmasi Password", type="password", key="reg_cp")
-        
         if st.button("Daftar Sekarang"):
             if new_p != confirm_p:
                 st.warning("Password tidak cocok!")
-            elif len(new_u) < 3 or len(new_p) < 3:
-                st.warning("Username/Password terlalu pendek.")
             else:
                 status = register_user(new_u, new_p)
                 if status == "success":
-                    st.success("Akun berhasil dibuat! Silakan login di tab sebelah.")
+                    st.success("Akun berhasil dibuat! Silakan login.")
                 elif status == "exists":
-                    st.error("Username sudah terpakai, cari yang lain ya.")
+                    st.error("Username sudah terpakai.")
 else:
-    # DEFINISI GLOBAL UID (PILIHAN B)
+    # DEFINISI GLOBAL UID
     uid = st.session_state['user_info']['id']
     username = st.session_state['user_info']['username']
 
@@ -173,7 +133,6 @@ else:
     if menu == "📝 Jurnal":
         st.markdown('<div class="notion-header"><i class="lucide-book-open"></i> Jurnal Kehamilan</div>', unsafe_allow_html=True)
         st.caption("Ruang tenang untuk mencatat setiap momen berharga Bunda.")
-        audio = mic_recorder(start_prompt="Rekam Suara 🎙️", stop_prompt="Simpan ✅", key='recorder')
         
         with st.form("form_jurnal"):
             kat = st.selectbox("Kategori", ["📝 Jurnal & Keluhan", "🦶 Milestone", "💖 Momen bahagia"])
@@ -181,7 +140,6 @@ else:
             catatan = st.text_area("Catatan:")
             if st.form_submit_button("Simpan"):
                 if catatan:
-                    # TAMBAHKAN user_id (uid) di sini!
                     query = "INSERT INTO jurnal_kehamilan (kategori, catatan, status_penting, user_id) VALUES (%s, %s, %s, %s)"
                     if save_to_db(query, (kat, catatan, status, uid)):
                         st.success("Tersimpan!")
@@ -190,177 +148,88 @@ else:
 
     # --- MENU 2: KONTROL & OBAT ---
     elif menu == "📅 Kontrol & Obat":
-        st.markdown('<div class="notion-header"><i class="lucide-pill"></i> Manajemen Obat & Vitamin</div>', unsafe_allow_html=True)
-        st.caption("Pantau asupan suplemen dan obat rutin Bunda untuk kesehatan Si Kecil.")
+        st.markdown('<div class="notion-header"><i class="lucide-activity"></i> Manajemen Kesehatan Bunda</div>', unsafe_allow_html=True)
+        st.caption("Kelola jadwal obat dan janji temu dokter dalam satu tempat yang tenang.")
         st.divider()
-        
-        # --- MENU OBAT & DOKTER ---
 
-# 1. Judul Halaman Utama
-st.markdown('<div class="notion-header"><i class="lucide-activity"></i> Manajemen Kesehatan Bunda</div>', unsafe_allow_html=True)
-st.caption("Kelola jadwal obat dan janji temu dokter dalam satu tempat yang tenang.")
-st.divider()
+        col_input, col_info = st.columns()
 
-# Layout Kolom: Kiri untuk Input, Kanan untuk Informasi/Tips
-col_input, col_info = st.columns([2, 1]) 
+        with col_input:
+            # FORM OBAT
+            st.markdown('### <i class="lucide-pill"></i> Tambah Jadwal Obat', unsafe_allow_html=True)
+            with st.form("form_obat", clear_on_submit=True):
+                nama_obat = st.text_input("Nama Obat", placeholder="misal: Folavit")
+                c1, c2 = st.columns(2)
+                with c1: dosis = st.text_input("Dosis", placeholder="1 x 1")
+                with c2: waktu = st.time_input("Jam")
+                if st.form_submit_button("Simpan Obat"):
+                    if nama_obat:
+                        query = "INSERT INTO master_obat (nama_obat, dosis, waktu_konsumsi, user_id) VALUES (%s, %s, %s, %s)"
+                        if save_to_db(query, (nama_obat, dosis, str(waktu), uid)):
+                            st.toast(f"✅ {nama_obat} dicatat!")
+                            st.rerun()
 
-with col_input:
-    # --- FORM OBAT ---
-    st.markdown('### <i class="lucide-pill"></i> Tambah Jadwal Obat', unsafe_allow_html=True)
-    with st.form("form_obat", clear_on_submit=True):
-        nama_obat = st.text_input("Nama Obat", placeholder="misal: Folavit 400mcg")
-        
-        # Sub-kolom di dalam form untuk Dosis & Waktu
-        c1, c2 = st.columns(2)
-        with c1:
-            dosis = st.text_input("Dosis", placeholder="1 x 1 tablet/hari")
-        with c2:
-            waktu = st.time_input("Jam konsumsi")
-        
-        submit_obat = st.form_submit_button("Simpan ke Jurnal")
+            # FORM DOKTER
+            st.markdown('### <i class="lucide-calendar-plus"></i> Jadwal Kontrol Baru', unsafe_allow_html=True)
+            with st.form("form_dokter", clear_on_submit=True):
+                rs = st.text_input("Nama RS")
+                c3, c4 = st.columns(2)
+                with c3: tgl = st.date_input("Tanggal")
+                with c4: tujuan = st.selectbox("Keperluan", ["USG", "Rutin", "Lab"])
+                if st.form_submit_button("Simpan Jadwal"):
+                    query = "INSERT INTO jadwal_kontrol (nama_rs_klinik, tgl_kontrol, keperluan, user_id) VALUES (%s, %s, %s, %s)"
+                    if save_to_db(query, (rs, tgl, tujuan, uid)):
+                        st.toast("Jadwal tersimpan!")
+                        st.rerun()
 
-    # Logika Simpan Obat (Harus sejajar dengan 'with col_input' tapi di luar 'with st.form')
-    if submit_obat:
-        if nama_obat:
-            query = "INSERT INTO master_obat (nama_obat, dosis, waktu_konsumsi, user_id) VALUES (%s, %s, %s, %s)"
-            if save_to_db(query, (nama_obat, dosis, str(waktu), uid)):
-                st.toast(f"✅ {nama_obat} berhasil dicatat!", icon='💊')
-                st.rerun()
-        else:
-            st.error("Nama obat tidak boleh kosong ya, Bun.")
+        with col_info:
+            st.markdown('### <i class="lucide-lightbulb"></i> Tips', unsafe_allow_html=True)
+            st.info("Minum vitamin tepat waktu sangat penting untuk Si Kecil.")
+            with st.expander("⚙️ Nomor Admin"):
+                n_baru = st.text_input("Update Nomor")
+                if st.button("Simpan Nomor"):
+                    save_to_db("UPDATE kontak_layanan SET nomor_wa=%s WHERE tipe='Admin'", (n_baru,))
+                    st.rerun()
 
-    st.write("") # Spacer
-
-    # --- FORM DOKTER ---
-    st.markdown('### <i class="lucide-calendar-plus"></i> Jadwal Kontrol Baru', unsafe_allow_html=True)
-    with st.form("form_dokter", clear_on_submit=True):
-        rs = st.text_input("Nama RS / Klinik", placeholder="misal: RSIA Bunda")
-        
-        c3, c4 = st.columns(2)
-        with c3:
-            tgl = st.date_input("Tanggal Kontrol")
-        with c4:
-            tujuan = st.selectbox("Keperluan", ["USG", "Rutin", "Lab", "Konsultasi"])
-        
-        submit_dokter = st.form_submit_button("Simpan Jadwal")
-
-    if submit_dokter:
-        if rs:
-            query = "INSERT INTO jadwal_kontrol (nama_rs_klinik, tgl_kontrol, keperluan, user_id) VALUES (%s, %s, %s, %s)"
-            if save_to_db(query, (rs, tgl, tujuan, uid)):
-                st.toast("Jadwal kontrol berhasil disimpan!", icon='📅')
-                st.rerun()
-        else:
-            st.error("Nama RS tidak boleh kosong.")
-
-with col_info:
-    # Bagian Tips ala Notion
-    st.markdown('### <i class="lucide-lightbulb"></i> Tips Bunda', unsafe_allow_html=True)
-    st.info("""
-    **Penting!**
-    - Minum vitamin di jam yang sama setiap hari.
-    - Siapkan pertanyaan untuk dokter sebelum jadwal kontrol tiba.
-    """)
-    
-    # Pengaturan Nomor di kolom kecil (lebih rapi)
-    with st.expander("⚙️ Konfigurasi"):
-        n_baru = st.text_input("Nomor WA Admin", placeholder="628...")
-        if st.button("Update"):
-            if save_to_db("UPDATE kontak_layanan SET nomor_wa=%s WHERE tipe='Admin'", (n_baru,)):
-                st.toast("Nomor berhasil diperbarui!")
-                st.rerun()
-
-# --- TAMPILKAN DATA (DASHBOARD BAWAH) ---
-st.divider()
-conn = get_db_connection()
-if conn:
-    # Visualisasi Tabel Obat
-    st.markdown('### <i class="lucide-pill-bottle"></i> Daftar Konsumsi Obat', unsafe_allow_html=True)
-    df_obat = pd.read_sql("SELECT nama_obat, dosis FROM master_obat WHERE user_id=%s", conn, params=(uid,))
-    if not df_obat.empty:
-        st.dataframe(df_obat, use_container_width=True, hide_index=True)
-    else:
-        st.info("Belum ada catatan obat.")
-
-    # Visualisasi Tabel Kontrol
-    st.markdown('### <i class="lucide-stethoscope"></i> Jadwal Kontrol Mendatang', unsafe_allow_html=True)
-    df_kontrol = pd.read_sql("SELECT nama_rs_klinik, tgl_kontrol, keperluan FROM jadwal_kontrol WHERE user_id=%s ORDER BY tgl_kontrol ASC", conn, params=(uid,))
-    if not df_kontrol.empty:
-        st.dataframe(df_kontrol, use_container_width=True, hide_index=True)
-        
-        # Tombol WA berdasarkan data terakhir
-        rs_terakhir = df_kontrol['nama_rs_klinik'].iloc
-        tujuan_terakhir = df_kontrol['keperluan'].iloc
-        pesan_wa = f"Halo Admin, saya mau daftar {tujuan_terakhir} di {rs_terakhir}"
-        
-        # Ambil nomor admin untuk link
-        df_admin = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
-        nomor_admin = df_admin['nomor_wa'].iloc if not df_admin.empty else "628123456789"
-        
-        link = buat_link_wa(nomor_admin, pesan_wa)
-        st.link_button("📲 Daftar via WA Admin", link, use_container_width=True)
-    else:
-        st.info("Tidak ada jadwal kontrol.")
-    
-    conn.close()
-
- # --- MENU 3: NUTRISI ---
-elif menu == "🥗 Cek Nutrisi":
-    # Gunakan Header ala Notion
-    st.markdown('<div class="notion-header"><i class="lucide-apple"></i> Nutrisi Bunda</div>', unsafe_allow_html=True)
-    st.caption("Cek keamanan dan kandungan gizi makanan untuk mendukung tumbuh kembang Si Kecil.")
-    st.divider()
-
-    # Layout 2 kolom untuk input
-    c_in, c_help = st.columns()
-    
-    with c_in:
-        makanan = st.text_input("Bunda makan apa hari ini?", placeholder="Contoh: Ikan salmon panggang")
-        btn_analisis = st.button("Analisis Nutrisi", use_container_width=True)
-        
-        if btn_analisis:
-            if makanan:
-                with st.spinner("AI sedang menganalisis..."):
-                    try:
-                        res = client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
-                            messages=[
-                                {"role": "system", "content": "Kamu adalah ahli gizi spesialis kehamilan. Berikan jawaban yang edukatif, singkat, dan ramah menggunakan format markdown yang bersih."},
-                                {"role": "user", "content": f"Apakah makanan ini aman untuk ibu hamil dan apa gizinya: {makanan}"}
-                            ]
-                        )
-                        hasil_ai = res.choices.message.content
-                        
-                        # Tampilkan hasil dengan card minimalis
-                        st.markdown("---")
-                        st.markdown(hasil_ai)
-                        
-                        # Simpan ke DB
-                        query_simpan = "INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)"
-                        save_to_db(query_simpan, (makanan, hasil_ai, uid))
-                        st.toast("Analisis disimpan!", icon='✅')
-                        
-                    except Exception as e:
-                        st.error(f"Gagal menghubungi AI: {e}")
-            else:
-                st.warning("Isi nama makanannya dulu ya, Bun.")
-
-    with c_help:
-        st.info("💡 **Tips:** Hindari makanan mentah atau setengah matang selama kehamilan ya, Bun.")
-
-    # Riwayat (Tetap di bawah)
-    st.write("")
-    with st.expander("📜 Riwayat Nutrisi Bunda"):
+        st.divider()
         conn = get_db_connection()
         if conn:
-            df_makan = pd.read_sql("SELECT tgl_catatan as Tanggal, nama_makanan as Makanan FROM catatan_makanan WHERE user_id=%s ORDER BY tgl_catatan DESC", conn, params=(uid,))
-            st.dataframe(df_makan, use_container_width=True, hide_index=True)
+            # Tampilkan Tabel Obat
+            st.markdown('### <i class="lucide-pill-bottle"></i> Daftar Obat', unsafe_allow_html=True)
+            df_o = pd.read_sql("SELECT nama_obat, dosis FROM master_obat WHERE user_id=%s", conn, params=(uid,))
+            st.dataframe(df_o, use_container_width=True, hide_index=True) if not df_o.empty else st.info("Kosong")
+            
+            # Tampilkan Tabel Kontrol
+            st.markdown('### <i class="lucide-stethoscope"></i> Jadwal Kontrol', unsafe_allow_html=True)
+            df_k = pd.read_sql("SELECT nama_rs_klinik, tgl_kontrol, keperluan FROM jadwal_kontrol WHERE user_id=%s ORDER BY tgl_kontrol ASC", conn, params=(uid,))
+            if not df_k.empty:
+                st.dataframe(df_k, use_container_width=True, hide_index=True)
+                # Link WA
+                df_a = pd.read_sql("SELECT nomor_wa FROM kontak_layanan WHERE tipe='Admin' LIMIT 1", conn)
+                no_admin = df_a['nomor_wa'].iloc if not df_a.empty else "62812"
+                link = buat_link_wa(no_admin, f"Saya mau daftar {df_k['keperluan'].iloc}")
+                st.link_button("📲 Daftar via WA", link, use_container_width=True)
             conn.close()
 
-# --- MENU 4: TANYA DOKTER ---
-elif menu == "👨‍⚕️ Tanya Dokter":
-    st.markdown('<div class="notion-header"><i class="lucide-message-square"></i> Tanya Dokter (Beta)</div>', unsafe_allow_html=True)
-    st.caption("Dapatkan ringkasan jurnal kesehatan Bunda untuk dikonsultasikan ke Dokter.")
-    st.divider()
-    
-    st.info("Fitur Resume Jurnal sedang disiapkan untuk membantu Bunda berkomunikasi lebih lancar dengan Dokter.")
+    # --- MENU 3: NUTRISI ---
+    elif menu == "🥗 Cek Nutrisi":
+        st.markdown('<div class="notion-header"><i class="lucide-apple"></i> Nutrisi Bunda</div>', unsafe_allow_html=True)
+        c_in, c_help = st.columns()
+        with c_in:
+            makanan = st.text_input("Input makanan:")
+            if st.button("Cek AI"):
+                with st.spinner("Menganalisis..."):
+                    res = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[{"role": "user", "content": f"Keamanan & gizi {makanan} untuk bumil?"}]
+                    )
+                    ans = res.choices.message.content
+                    st.markdown(ans)
+                    save_to_db("INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)", (makanan, ans, uid))
+        with c_help:
+            st.info("AI akan memberikan saran gizi.")
+
+    # --- MENU 4: TANYA DOKTER ---
+    elif menu == "👨‍⚕️ Tanya Dokter":
+        st.markdown('<div class="notion-header"><i class="lucide-message-square"></i> Tanya Dokter</div>', unsafe_allow_html=True)
+        st.info("Fitur resume otomatis sedang dikembangkan.")
