@@ -163,7 +163,7 @@ elif menu == "🥗 Cek Nutrisi":
                             try:
                                 conn = get_db_connection()
                                 cursor = conn.cursor()
-                                query = "INSERT INTO jurnal_kehamilan (kategori, catatan, metadata_ai) VALUES (%s, %s, %s)"
+                                query = "INSERT INTO catatan_makanan (nama_makanan, catatan nutrisi) VALUES (%s, %s)"
                                 cursor.execute(query, ("🥗 Nutrisi Makanan", f"Makan: {makanan_input}", hasil_ai))
                                 conn.commit()
                                 conn.close()
