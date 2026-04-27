@@ -236,7 +236,7 @@ else:
                         model="llama-3.3-70b-versatile",
                         messages=[{"role": "user", "content": f"Keamanan & gizi {makanan} untuk bumil?"}]
                     )
-                    ans = res.choices.message.content
+                    ans = res.choices.message.content[0]
                     st.markdown(ans)
                     save_to_db("INSERT INTO catatan_makanan (nama_makanan, catatan_nutrisi, user_id) VALUES (%s, %s, %s)", (makanan, ans, uid))
         with c_help:
